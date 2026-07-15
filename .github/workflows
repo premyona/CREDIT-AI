@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate synthetic dataset
+        run: python data/generate_dataset.py
+
+      - name: Train model
+        run: python model_training.py
+
+      - name: Smoke-test the Flask app
+        run: |
+          python - <<'PY'
+          from app import app
+
+          client = app.test_client()
+          routes = [("/", "GET"), ("/about", "GET"), ("/health", "GET")]
+
+          for route, method in routes:
+              if method == "GET":
+                  resp = client.get(route)
+              else:
+                  resp = client.post(route)
+              assert resp.status_code == 200, f"{route} returned {resp.status_code}"
+              print(route, "OK")
+
+          resp = client.post(
+              "/predict",
+              data={
+                  "gender": "M",
+                  "own_car": "N",
+                  "own_property": "Y",
+                  "children_count": "0",
+                  "annual_income": "250000",
+                  "income_type": "Working",
+                  "education_type": "Secondary / secondary special",
+                  "family_status": "Married",
+                  "housing_type": "House / apartment",
+                  "has_work_phone": "0",
+                  "has_phone": "1",
+                  "has_email": "0",
+                  "occupation_type": "Laborers",
+                  "family_members": "2",
+                  "age_years": "35",
+                  "employment_years": "5",
+              },
+          )
+          assert resp.status_code == 200, f"/predict returned {resp.status_code}"
+          print("/predict OK")
+          PY
+
+      - name: Lint with flake8
+        continue-on-error: true
+        run: |
+          pip install flake8
+          flake8 . --max-line-length=120 --extend-ignore=E203,W503 --exclude=notebook
